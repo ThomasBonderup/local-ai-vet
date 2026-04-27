@@ -1,0 +1,66 @@
+{
+  "schema_version": "evidence-triage.evidence_pack.v1",
+  "run_id": "rust-iot-gateway-local-test",
+  "repo": {
+    "name": "Rust-IoT-Gateway",
+    "language": "rust",
+    "commit": "local",
+    "branch": "main"
+  },
+  "system_context": {
+    "system_type": "Rust IoT gateway",
+    "critical_paths": [
+      "MQTT ingest",
+      "TLS/mTLS transport",
+      "certificate validation",
+      "device telemetry parsing",
+      "WAL durability",
+      "republish to core broker"
+    ]
+  },
+  "baseline_diff": {
+    "new_dependencies": [
+      {
+        "evidence_id": "baseline-diff-001",
+        "package": "example-crate",
+        "version": "1.2.3",
+        "direct": false
+      }
+    ],
+    "updated_dependencies": [],
+    "removed_dependencies": []
+  },
+  "scanner_findings": [
+    {
+      "evidence_id": "cargo-audit-001",
+      "source": "cargo-audit",
+      "package": "example-crate",
+      "version": "1.2.3",
+      "advisory_id": "RUSTSEC-0000-0000",
+      "severity": "medium",
+      "summary": "Example advisory used for local testing."
+    }
+  ],
+  "sbom_components": [
+    {
+      "evidence_id": "sbom-001",
+      "package": "example-crate",
+      "version": "1.2.3",
+      "ecosystem": "cargo",
+      "direct": false,
+      "dependency_path": [
+        "rust-iot-gateway",
+        "mqtt-client",
+        "example-crate"
+      ]
+    }
+  ],
+  "audit_engine_findings": [
+    {
+      "evidence_id": "audit-engine-001",
+      "control": "mqtt_tls_posture",
+      "title": "TLS enabled on edge broker",
+      "relevance": "Gateway transport path is security-sensitive."
+    }
+  ]
+}
