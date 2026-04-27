@@ -1,0 +1,42 @@
+{
+  "schema_version": "evidence-triage.ai_triage.v1",
+  "run_id": "rust-iot-gateway-local-test",
+  "model": {
+    "provider": "ollama",
+    "name": "qwen2.5-coder"
+  },
+  "summary": "A new dependency 'example-crate' version 1.2.3 has been added to the Rust-IoT-Gateway project. This dependency is used in multiple security-sensitive paths such as MQTT ingest, TLS/mTLS transport, certificate validation, device telemetry parsing, WAL durability, and republishing to the core broker. The advisory provided by cargo-audit indicates a potential risk, but its severity should be verified.",
+  "finding_candidates": [
+    {
+      "candidate_id": "local-test-001",
+      "title": "New dependency 'example-crate' version 1.2.3",
+      "category": "Dependency",
+      "priority_suggestion": "Medium",
+      "affected_components": [
+        "MQTT ingest",
+        "TLS/mTLS transport",
+        "certificate validation",
+        "device telemetry parsing",
+        "WAL durability",
+        "republish to core broker"
+      ],
+      "evidence_refs": [
+        "baseline-diff-001",
+        "cargo-audit-001",
+        "sbom-001",
+        "audit-engine-001"
+      ],
+      "why_review_worthy": "The new dependency introduces a medium-severity risk, which could impact the security of critical paths in the IoT gateway.",
+      "iot_relevance": "High",
+      "suggested_human_checks": [
+        "Verify the security posture of TLS/mTLS transport.",
+        "Check if certificate validation is properly implemented.",
+        "Ensure that device telemetry parsing is secure against injection attacks.",
+        "Validate WAL durability mechanisms to prevent data loss.",
+        "Confirm that republishing to the core broker is done securely."
+      ],
+      "uncertainty": "The advisory provided by cargo-audit is a local test advisory and may not reflect real-world vulnerabilities.",
+      "recommended_human_status": "Review"
+    }
+  ]
+}

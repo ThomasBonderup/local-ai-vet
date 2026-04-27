@@ -1,6 +1,5 @@
-use std::{default, path::PathBuf};
-
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
 #[command(name = "evidence-triage")]
