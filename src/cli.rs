@@ -24,6 +24,13 @@ pub enum Command {
         #[arg(long, default_value = "http://localhost:11434")]
         ollama_url: String,
     },
+    Report {
+        #[arg(short, long)]
+        triage: PathBuf,
+
+        #[arg(short, long)]
+        output: PathBuf,
+    },
     Validate {
         #[arg(short, long)]
         input: PathBuf,
