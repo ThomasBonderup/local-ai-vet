@@ -18,7 +18,7 @@ pub enum Command {
         #[arg(short, long)]
         output: PathBuf,
 
-        #[arg(long, default_value = "gwen2.5-coder")]
+        #[arg(long, default_value = "qwen2.5-coder")]
         model: String,
 
         #[arg(long, default_value = "http://localhost:11434")]
@@ -37,5 +37,12 @@ pub enum Command {
 
         #[arg(long)]
         triage: PathBuf,
+    },
+    BundleToEvidence {
+        #[arg(short, long)]
+        bundle_dir: PathBuf,
+
+        #[arg(short, long)]
+        output: PathBuf,
     },
 }

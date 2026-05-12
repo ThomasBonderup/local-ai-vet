@@ -49,7 +49,7 @@ Options:
 
 - `-i, --input <INPUT>`: Path to the source evidence pack JSON file.
 - `-o, --output <OUTPUT>`: Path where the generated AI triage JSON should be written.
-- `--model <MODEL>`: Ollama model name to use. Defaults to `gwen2.5-coder`.
+- `--model <MODEL>`: Ollama model name to use. Defaults to `qwen2.5-coder`.
 - `--ollama-url <OLLAMA_URL>`: Base URL for the Ollama server. Defaults to `http://localhost:11434`.
 
 Use this command when you want the local model to produce a structured first-pass review of the evidence pack. Make sure Ollama is running and the requested model is available locally before running it.

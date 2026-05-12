@@ -1,3 +1,4 @@
+mod adapters;
 mod cli;
 mod evidence;
 mod llm;
@@ -12,6 +13,7 @@ use llm::ollama::OllamaClient;
 use std::fs;
 
 use crate::{
+    evidence::bundle_to_evidence::convert_gateway_release_bundle,
     report::markdown::render_markdown_report,
     triage::{candidate::AiTriageResult, validate::validate_ai_triage_refs},
 };
@@ -21,6 +23,11 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Command::BundleToEvidence { bundle_dir, output } => {
+            convert_gateway_release_bundle(&bundle_dir)
+                .context("failed to convert bundle to evidence")?;
+            println!("Converted bundle to evidence");
+        }
         Command::Triage {
             input,
             output,
