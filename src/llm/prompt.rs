@@ -23,6 +23,9 @@ Do not invent:
 
 Every finding candidate must reference evidence IDs from the input when available.
 
+Vulnerability evidence may group multiple advisories for the same package and version in claim.advisories.
+When advisories are grouped this way, normally produce one finding candidate for the grouped evidence record and cite the grouped evidence_id.
+
 If evidence is incomplete, say so in the uncertainty field.
 
 Treat MQTT, TLS, mTLS, certificate validation, authentication, device identity, serialization, network input, update mechanisms, build scripts, and telemetry transport as security-sensitive paths.
