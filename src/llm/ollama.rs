@@ -1,4 +1,4 @@
-use crate::evidence::raw::RawEvidencePack;
+use crate::evidence::model::EvidencePack;
 use crate::llm::prompt::build_triage_prompt;
 use crate::triage::candidate::{AiTriageResult, ModelInfo};
 use anyhow::{Result, anyhow};
@@ -20,7 +20,7 @@ impl OllamaClient {
         }
     }
 
-    pub async fn triage(&self, pack: &RawEvidencePack) -> Result<AiTriageResult> {
+    pub async fn triage(&self, pack: &EvidencePack) -> Result<AiTriageResult> {
         let prompt = build_triage_prompt(pack)?;
 
         let schema = json!({

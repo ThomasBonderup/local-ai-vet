@@ -1,6 +1,6 @@
-use crate::evidence::raw::RawEvidencePack;
+use crate::evidence::model::EvidencePack;
 
-pub fn build_triage_prompt(pack: &RawEvidencePack) -> anyhow::Result<String> {
+pub fn build_triage_prompt(pack: &EvidencePack) -> anyhow::Result<String> {
     let evidence_json = serde_json::to_string_pretty(pack)?;
 
     Ok(format!(

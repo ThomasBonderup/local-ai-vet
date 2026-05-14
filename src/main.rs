@@ -1,5 +1,7 @@
+mod adapters;
 mod cli;
 mod evidence;
+mod io;
 mod llm;
 mod report;
 mod triage;
@@ -12,6 +14,10 @@ use llm::ollama::OllamaClient;
 use std::fs;
 
 use crate::{
+    evidence::{
+        bundle_to_evidence::convert_gateway_release_bundle, model::EvidencePack,
+        pack::write_evidence_pack,
+    },
     report::markdown::render_markdown_report,
     triage::{candidate::AiTriageResult, validate::validate_ai_triage_refs},
 };
@@ -21,15 +27,23 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Command::BundleToEvidence { bundle_dir, output } => {
+            let pack = convert_gateway_release_bundle(&bundle_dir)
+                .context("failed to convert bundle to evidence")?;
+
+            write_evidence_pack(&pack, &output).context("failed to write evidence pack")?;
+
+            println!("Converted bundle to evidence: {}", output.display());
+        }
         Command::Triage {
             input,
             output,
             model,
             ollama_url,
         } => {
-            let raw_pack = fs::read_to_string(&input)
+            let pack = fs::read_to_string(&input)
                 .with_context(|| format!("failed to read evidence pack: {}", input.display()))?;
-            let evidence_pack: RawEvidencePack = serde_json::from_str(&raw_pack)
+            let evidence_pack: EvidencePack = serde_json::from_str(&pack)
                 .with_context(|| format!("failed to parse evidence pack: {}", input.display()))?;
             let client = OllamaClient::new(ollama_url, model);
             let triage = client.triage(&evidence_pack).await?;
@@ -47,7 +61,7 @@ async fn main() -> Result<()> {
             let raw_pack = fs::read_to_string(&input)
                 .with_context(|| format!("failed to read evidence pack: {}", input.display()))?;
 
-            let evidence_pack: RawEvidencePack = serde_json::from_str(&raw_pack)
+            let evidence_pack: EvidencePack = serde_json::from_str(&raw_pack)
                 .with_context(|| format!("failed to parse evidence pack: {}", input.display()))?;
 
             let raw_triage = fs::read_to_string(&triage)
