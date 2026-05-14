@@ -1,4 +1,5 @@
 use crate::evidence::model::EvidenceRecord;
+use anyhow::Result;
 use std::path::Path;
 
 pub struct BundleContext {

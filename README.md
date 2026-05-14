@@ -1,8 +1,8 @@
 # Local AI Vet
 
-Local AI Vet is a local-first CLI for using an Ollama-backed language model to help triage dependency, IoT, and software supply-chain security evidence.
+Local AI Vet is a local-first security review assistant for turning release and supply-chain evidence into structured, human-reviewable AI triage.
 
-The project turns a structured evidence pack into AI-assisted finding candidates that a human reviewer can inspect. It is designed for review support, not automated security decisions: the model is instructed to use only the supplied evidence, avoid inventing CVEs or remediation facts, and preserve uncertainty when the evidence is incomplete.
+The CLI normalizes gateway release artifacts into evidence packs, asks a locally hosted Ollama model to identify candidate findings, validates that the model's output points back to real evidence, and renders a Markdown review report. It is built for reviewer acceleration, not automated security decisions: the model is instructed to use only the supplied evidence, avoid inventing CVEs or remediation facts, and preserve uncertainty when the evidence is incomplete.
 
 Use it to:
 
@@ -27,11 +27,29 @@ local-ai-vet <command> [options]
 
 The usual workflow is:
 
-1. Generate AI triage JSON from an evidence pack with `triage`.
-2. Check that the triage output only references valid evidence with `validate`.
-3. Render a Markdown review report with `report`.
+1. Convert a release/security artifact bundle into an evidence pack with `bundle-to-evidence`.
+2. Generate AI triage JSON from an evidence pack with `triage`.
+3. Check that the triage output only references valid evidence with `validate`.
+4. Render a Markdown review report with `report`.
 
 ## Commands
+
+### `bundle-to-evidence`
+
+Converts a gateway release/security artifact bundle into an evidence pack JSON file.
+
+```bash
+cargo run -- bundle-to-evidence \
+  --bundle-dir /path/to/release-security-artifacts/20260512T130225Z-local-ai-vetting \
+  --output evidence-pack.json
+```
+
+Options:
+
+- `-b, --bundle-dir <BUNDLE_DIR>`: Path to the bundle directory to convert.
+- `-o, --output <OUTPUT>`: Path where the evidence pack JSON should be written.
+
+Use this command when you have collected release artifacts and want to normalize them before running AI triage.
 
 ### `triage`
 
@@ -103,6 +121,7 @@ cargo run -- --help
 Show help for a specific command:
 
 ```bash
+cargo run -- bundle-to-evidence --help
 cargo run -- triage --help
 cargo run -- validate --help
 cargo run -- report --help

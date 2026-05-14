@@ -1,3 +1,5 @@
+use crate::evidence::raw::RawRepo;
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct EvidenceRecord {
     pub evidence_id: String,
@@ -16,6 +18,7 @@ pub enum EvidenceKind {
     AuditEngineFinding,
     BaselineDiff,
     SystemContext,
+    Vulnerability,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -32,4 +35,12 @@ pub enum EvidenceConfidence {
     ToolReported,
     DerivedFromTools,
     HumanVerified,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EvidencePack {
+    pub schema_version: String,
+    pub run_id: String,
+    pub repo: RawRepo,
+    pub evidence: Vec<EvidenceRecord>,
 }
