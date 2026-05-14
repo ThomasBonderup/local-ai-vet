@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
-use serde_json::Value;
-use std::path::Path;
+use serde_json::{Value, json};
+use std::{collections::BTreeMap, path::Path};
 
 use crate::adapters::traits::{BundleContext, EvidenceAdapter};
 use crate::evidence::model::{EvidenceConfidence, EvidenceKind, EvidenceRecord, EvidenceSource};
@@ -25,7 +25,7 @@ impl EvidenceAdapter for CargoAuditAdapter {
         let json: Value = serde_json::from_str(&raw)
             .with_context(|| format!("failed to parse JSON file: {}", path.display()))?;
 
-        let mut records = Vec::new();
+        let mut groups: BTreeMap<(String, String), Vec<Value>> = BTreeMap::new();
 
         if let Some(vulns) = json
             .pointer("/vulnerabilities/list")
@@ -35,7 +35,7 @@ impl EvidenceAdapter for CargoAuditAdapter {
                 let package_name = vuln
                     .pointer("/package/name")
                     .and_then(|v| v.as_str())
-                    .unwrap_or("unkown");
+                    .unwrap_or("unknown");
 
                 let package_version = vuln
                     .pointer("/package/version")
@@ -47,36 +47,222 @@ impl EvidenceAdapter for CargoAuditAdapter {
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
 
-                let evidence_id = format!(
-                    "vuln:cargo-audit:{}:{}:{}",
-                    advisory_id, package_name, package_version
-                );
+                groups
+                    .entry((package_name.to_string(), package_version.to_string()))
+                    .or_default()
+                    .push(json!({
+                        "advisory_id": advisory_id,
+                        "title": vuln.pointer("/advisory/title"),
+                        "description": vuln.pointer("/advisory/description"),
+                        "date": vuln.pointer("/advisory/date"),
+                        "aliases": vuln.pointer("/advisory/aliases"),
+                        "url": vuln.pointer("/advisory/url"),
+                        "patched_versions": vuln.pointer("/versions/patched"),
+                        "source_pointer": format!("/vulnerabilities/list/{idx}")
+                    }));
+            }
+        }
 
-                records.push(EvidenceRecord {
+        let records = groups
+            .into_iter()
+            .map(|((package_name, package_version), advisories)| {
+                let evidence_id = format!("vuln:cargo-audit:{package_name}:{package_version}");
+
+                EvidenceRecord {
                     evidence_id,
                     run_id: ctx.run_id.clone(),
                     kind: EvidenceKind::Vulnerability,
                     source: EvidenceSource {
                         file: "cargo-audit.json".to_string(),
-                        pointer: Some(format!("/vulnerabilities/list/{idx}")),
+                        pointer: Some("/vulnerabilities/list".to_string()),
                         sha256: None,
                     },
-                    subject: serde_json::json!({
+                    subject: json!({
                         "ecosystem": "cargo",
                         "package": package_name,
                         "version": package_version
                     }),
-                    claim: serde_json::json!({
-                        "advisory_id": advisory_id,
-                        "title": vuln.pointer("/advisory/title"),
-                        "url": vuln.pointer("/advisory/url"),
-                        "patched_versions": vuln.pointer("/versions/patched"),
-                        "aliases": vuln.pointer("/advisory/aliases")
+                    claim: json!({
+                        "advisory_count": advisories.len(),
+                        "advisories": advisories
                     }),
                     confidence: EvidenceConfidence::ToolReported,
-                });
-            }
-        }
+                }
+            })
+            .collect();
+
         Ok(records)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn test_context() -> BundleContext {
+        BundleContext {
+            run_id: "test-run".to_string(),
+            repo_name: "rust-iot-gateway".to_string(),
+            bundle_dir: std::env::temp_dir(),
+        }
+    }
+
+    fn parse_fixture(content: &str) -> Vec<EvidenceRecord> {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after UNIX epoch")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("local-ai-vet-cargo-audit-{unique}"));
+        fs::create_dir_all(&dir).expect("failed to create temp fixture dir");
+        let path = dir.join("cargo-audit.json");
+        fs::write(&path, content).expect("failed to write cargo-audit fixture");
+
+        let records = CargoAuditAdapter
+            .parse(&path, &test_context())
+            .expect("failed to parse cargo-audit fixture");
+
+        fs::remove_file(&path).ok();
+        fs::remove_dir(&dir).ok();
+
+        records
+    }
+
+    fn fixture_vulnerability(
+        package: &str,
+        version: &str,
+        advisory_id: &str,
+        title: &str,
+    ) -> Value {
+        json!({
+            "package": {
+                "name": package,
+                "version": version
+            },
+            "advisory": {
+                "id": advisory_id,
+                "title": title,
+                "aliases": [format!("GHSA-{advisory_id}")],
+                "url": format!("https://example.invalid/{advisory_id}"),
+                "date": "2026-05-12",
+                "description": format!("Description for {advisory_id}")
+            },
+            "versions": {
+                "patched": [">=0.103.13, <0.104.0-alpha.1"]
+            }
+        })
+    }
+
+    #[test]
+    fn groups_multiple_advisories_for_same_package_version() {
+        let content = json!({
+            "vulnerabilities": {
+                "list": [
+                    fixture_vulnerability(
+                        "rustls-webpki",
+                        "0.103.10",
+                        "RUSTSEC-2026-0104",
+                        "Reachable panic in certificate revocation list parsing"
+                    ),
+                    fixture_vulnerability(
+                        "rustls-webpki",
+                        "0.103.10",
+                        "RUSTSEC-2026-0098",
+                        "Name constraints for URI names were incorrectly accepted"
+                    ),
+                    fixture_vulnerability(
+                        "rustls-webpki",
+                        "0.103.10",
+                        "RUSTSEC-2026-0099",
+                        "Name constraints were accepted for wildcard certificates"
+                    )
+                ]
+            }
+        })
+        .to_string();
+
+        let records = parse_fixture(&content);
+
+        assert_eq!(records.len(), 1);
+        let record = &records[0];
+        assert_eq!(
+            record.evidence_id,
+            "vuln:cargo-audit:rustls-webpki:0.103.10"
+        );
+        assert_eq!(
+            record.source.pointer.as_deref(),
+            Some("/vulnerabilities/list")
+        );
+        assert_eq!(record.claim["advisory_count"], 3);
+
+        let advisories = record.claim["advisories"]
+            .as_array()
+            .expect("advisories should be an array");
+        let advisory_ids: Vec<_> = advisories
+            .iter()
+            .map(|advisory| advisory["advisory_id"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            advisory_ids,
+            vec![
+                "RUSTSEC-2026-0104",
+                "RUSTSEC-2026-0098",
+                "RUSTSEC-2026-0099"
+            ]
+        );
+
+        let source_pointers: Vec<_> = advisories
+            .iter()
+            .map(|advisory| advisory["source_pointer"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            source_pointers,
+            vec![
+                "/vulnerabilities/list/0",
+                "/vulnerabilities/list/1",
+                "/vulnerabilities/list/2"
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_different_package_versions_as_separate_records() {
+        let content = json!({
+            "vulnerabilities": {
+                "list": [
+                    fixture_vulnerability(
+                        "rustls-webpki",
+                        "0.103.10",
+                        "RUSTSEC-2026-0104",
+                        "Reachable panic in certificate revocation list parsing"
+                    ),
+                    fixture_vulnerability(
+                        "another-crate",
+                        "1.2.3",
+                        "RUSTSEC-2026-0001",
+                        "Another vulnerability"
+                    )
+                ]
+            }
+        })
+        .to_string();
+
+        let records = parse_fixture(&content);
+
+        assert_eq!(records.len(), 2);
+        let evidence_ids: Vec<_> = records
+            .iter()
+            .map(|record| record.evidence_id.as_str())
+            .collect();
+        assert_eq!(
+            evidence_ids,
+            vec![
+                "vuln:cargo-audit:another-crate:1.2.3",
+                "vuln:cargo-audit:rustls-webpki:0.103.10"
+            ]
+        );
     }
 }
