@@ -19,6 +19,7 @@ pub enum EvidenceKind {
     BaselineDiff,
     SystemContext,
     Vulnerability,
+    Component,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
