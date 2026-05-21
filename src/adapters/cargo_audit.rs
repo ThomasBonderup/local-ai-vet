@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde_json::{Value, json};
-use std::{collections::BTreeMap, path::Path};
+use std::path::Path;
 
 use crate::adapters::traits::{BundleContext, EvidenceAdapter};
 use crate::evidence::model::{EvidenceConfidence, EvidenceKind, EvidenceRecord, EvidenceSource};
@@ -25,7 +25,7 @@ impl EvidenceAdapter for CargoAuditAdapter {
         let json: Value = serde_json::from_str(&raw)
             .with_context(|| format!("failed to parse JSON file: {}", path.display()))?;
 
-        let mut groups: BTreeMap<(String, String), Vec<Value>> = BTreeMap::new();
+        let mut records = Vec::new();
 
         if let Some(vulns) = json
             .pointer("/vulnerabilities/list")
@@ -47,10 +47,24 @@ impl EvidenceAdapter for CargoAuditAdapter {
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
 
-                groups
-                    .entry((package_name.to_string(), package_version.to_string()))
-                    .or_default()
-                    .push(json!({
+                records.push(EvidenceRecord {
+                    evidence_id: format!(
+                        "vuln:cargo-audit:{advisory_id}:{package_name}:{package_version}"
+                    ),
+                    run_id: ctx.run_id.clone(),
+                    kind: EvidenceKind::Vulnerability,
+                    source: EvidenceSource {
+                        file: "cargo-audit.json".to_string(),
+                        pointer: Some(format!("/vulnerabilities/list/{idx}")),
+                        sha256: None,
+                    },
+                    subject: json!({
+                        "ecosystem": "cargo",
+                        "package": package_name,
+                        "version": package_version,
+                        "advisory_id": advisory_id
+                    }),
+                    claim: json!({
                         "advisory_id": advisory_id,
                         "title": vuln.pointer("/advisory/title"),
                         "description": vuln.pointer("/advisory/description"),
@@ -59,37 +73,11 @@ impl EvidenceAdapter for CargoAuditAdapter {
                         "url": vuln.pointer("/advisory/url"),
                         "patched_versions": vuln.pointer("/versions/patched"),
                         "source_pointer": format!("/vulnerabilities/list/{idx}")
-                    }));
-            }
-        }
-
-        let records = groups
-            .into_iter()
-            .map(|((package_name, package_version), advisories)| {
-                let evidence_id = format!("vuln:cargo-audit:{package_name}:{package_version}");
-
-                EvidenceRecord {
-                    evidence_id,
-                    run_id: ctx.run_id.clone(),
-                    kind: EvidenceKind::Vulnerability,
-                    source: EvidenceSource {
-                        file: "cargo-audit.json".to_string(),
-                        pointer: Some("/vulnerabilities/list".to_string()),
-                        sha256: None,
-                    },
-                    subject: json!({
-                        "ecosystem": "cargo",
-                        "package": package_name,
-                        "version": package_version
-                    }),
-                    claim: json!({
-                        "advisory_count": advisories.len(),
-                        "advisories": advisories
                     }),
                     confidence: EvidenceConfidence::ToolReported,
-                }
-            })
-            .collect();
+                });
+            }
+        }
 
         Ok(records)
     }
@@ -157,7 +145,7 @@ mod tests {
     }
 
     #[test]
-    fn groups_multiple_advisories_for_same_package_version() {
+    fn emits_one_vulnerability_record_per_advisory() {
         let content = json!({
             "vulnerabilities": {
                 "list": [
@@ -186,24 +174,10 @@ mod tests {
 
         let records = parse_fixture(&content);
 
-        assert_eq!(records.len(), 1);
-        let record = &records[0];
-        assert_eq!(
-            record.evidence_id,
-            "vuln:cargo-audit:rustls-webpki:0.103.10"
-        );
-        assert_eq!(
-            record.source.pointer.as_deref(),
-            Some("/vulnerabilities/list")
-        );
-        assert_eq!(record.claim["advisory_count"], 3);
-
-        let advisories = record.claim["advisories"]
-            .as_array()
-            .expect("advisories should be an array");
-        let advisory_ids: Vec<_> = advisories
+        assert_eq!(records.len(), 3);
+        let advisory_ids: Vec<_> = records
             .iter()
-            .map(|advisory| advisory["advisory_id"].as_str().unwrap())
+            .map(|record| record.claim["advisory_id"].as_str().unwrap())
             .collect();
         assert_eq!(
             advisory_ids,
@@ -214,9 +188,22 @@ mod tests {
             ]
         );
 
-        let source_pointers: Vec<_> = advisories
+        let evidence_ids: Vec<_> = records
             .iter()
-            .map(|advisory| advisory["source_pointer"].as_str().unwrap())
+            .map(|record| record.evidence_id.as_str())
+            .collect();
+        assert_eq!(
+            evidence_ids,
+            vec![
+                "vuln:cargo-audit:RUSTSEC-2026-0104:rustls-webpki:0.103.10",
+                "vuln:cargo-audit:RUSTSEC-2026-0098:rustls-webpki:0.103.10",
+                "vuln:cargo-audit:RUSTSEC-2026-0099:rustls-webpki:0.103.10"
+            ]
+        );
+
+        let source_pointers: Vec<_> = records
+            .iter()
+            .map(|record| record.source.pointer.as_deref().unwrap())
             .collect();
         assert_eq!(
             source_pointers,
@@ -229,7 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn keeps_different_package_versions_as_separate_records() {
+    fn includes_advisory_identity_in_evidence_ids() {
         let content = json!({
             "vulnerabilities": {
                 "list": [
@@ -260,8 +247,8 @@ mod tests {
         assert_eq!(
             evidence_ids,
             vec![
-                "vuln:cargo-audit:another-crate:1.2.3",
-                "vuln:cargo-audit:rustls-webpki:0.103.10"
+                "vuln:cargo-audit:RUSTSEC-2026-0104:rustls-webpki:0.103.10",
+                "vuln:cargo-audit:RUSTSEC-2026-0001:another-crate:1.2.3"
             ]
         );
     }
