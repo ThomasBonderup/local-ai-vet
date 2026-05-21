@@ -9,13 +9,14 @@ mod triage;
 use anyhow::{Context, Result};
 use clap::Parser;
 use cli::{Cli, Command};
-use evidence::raw::RawEvidencePack;
 use llm::ollama::OllamaClient;
 use std::fs;
 
 use crate::{
     evidence::{
-        bundle_to_evidence::convert_gateway_release_bundle, model::EvidencePack,
+        audit::{ArtifactVerificationStatus, require_verified_bundle},
+        bundle_to_evidence::convert_gateway_release_bundle,
+        model::EvidencePack,
         pack::write_evidence_pack,
     },
     report::markdown::render_markdown_report,
@@ -34,6 +35,20 @@ async fn main() -> Result<()> {
             write_evidence_pack(&pack, &output).context("failed to write evidence pack")?;
 
             println!("Converted bundle to evidence: {}", output.display());
+        }
+        Command::VerifyBundle { bundle_dir } => {
+            let verification = require_verified_bundle(&bundle_dir)
+                .context("failed to verify bundle artifact integrity")?;
+
+            println!(
+                "Bundle artifact verification passed: {} artifacts checked.",
+                verification.artifacts.len()
+            );
+            for artifact in verification.artifacts {
+                if artifact.status == ArtifactVerificationStatus::Matched {
+                    println!("verified {} {}", artifact.expected_sha256, artifact.path);
+                }
+            }
         }
         Command::Triage {
             input,
@@ -91,6 +106,5 @@ async fn main() -> Result<()> {
             println!("Wrote Markdown review report to {}", output.display());
         }
     }
-    println!("Hello, world!");
     Ok(())
 }

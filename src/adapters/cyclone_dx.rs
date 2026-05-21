@@ -222,6 +222,9 @@ mod tests {
         assert_eq!(record.claim["purl"], "pkg:cargo/zip@2.4.2");
         assert_eq!(record.claim["type"], "library");
         assert_eq!(record.claim["scope"], "excluded");
-        assert!(matches!(record.confidence, EvidenceConfidence::ToolReported));
+        assert!(matches!(
+            record.confidence,
+            EvidenceConfidence::ToolReported
+        ));
     }
 }

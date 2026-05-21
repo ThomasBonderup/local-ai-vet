@@ -9,6 +9,7 @@ Use it to:
 - Review scanner findings, SBOM components, audit engine output, repository metadata, and baseline diffs together.
 - Generate structured AI triage JSON with candidate findings, evidence references, IoT relevance, and suggested human checks.
 - Validate that AI output refers back to evidence in the original pack.
+- Verify release bundle artifact digests before treating generated evidence as trusted.
 - Render a human-readable Markdown review report for follow-up analysis.
 
 ## CLI Usage
@@ -27,12 +28,28 @@ local-ai-vet <command> [options]
 
 The usual workflow is:
 
-1. Convert a release/security artifact bundle into an evidence pack with `bundle-to-evidence`.
-2. Generate AI triage JSON from an evidence pack with `triage`.
-3. Check that the triage output only references valid evidence with `validate`.
-4. Render a Markdown review report with `report`.
+1. Verify release/security artifact integrity with `verify-bundle`.
+2. Convert the artifact bundle into an evidence pack with `bundle-to-evidence`.
+3. Generate AI triage JSON from an evidence pack with `triage`.
+4. Check that the triage output only references valid evidence with `validate`.
+5. Render a Markdown review report with `report`.
 
 ## Commands
+
+### `verify-bundle`
+
+Verifies every artifact listed in a release/security bundle's `artifact-digests.txt`.
+
+```bash
+cargo run -- verify-bundle \
+  --bundle-dir /path/to/release-security-artifacts/20260512T130225Z-local-ai-vetting
+```
+
+Options:
+
+- `-b, --bundle-dir <BUNDLE_DIR>`: Path to the bundle directory to verify.
+
+Use this command before conversion when you want to confirm the bundle files still match the captured SHA-256 digests. Missing or mismatched artifacts fail the command.
 
 ### `bundle-to-evidence`
 
@@ -50,6 +67,8 @@ Options:
 - `-o, --output <OUTPUT>`: Path where the evidence pack JSON should be written.
 
 Use this command when you have collected release artifacts and want to normalize them before running AI triage.
+
+When `artifact-digests.txt` is present, this command verifies the bundle before writing evidence. The generated evidence pack includes source artifact SHA-256 values, repository commit/branch metadata from `manifest.json` or `provenance.json`, and provenance evidence records for the source checkout, audit run, and artifact integrity status.
 
 ### `triage`
 
@@ -122,6 +141,7 @@ Show help for a specific command:
 
 ```bash
 cargo run -- bundle-to-evidence --help
+cargo run -- verify-bundle --help
 cargo run -- triage --help
 cargo run -- validate --help
 cargo run -- report --help

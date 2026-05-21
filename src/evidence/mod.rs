@@ -1,3 +1,4 @@
+pub mod audit;
 pub mod bundle_to_evidence;
 pub mod model;
 pub mod pack;
