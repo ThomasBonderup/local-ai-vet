@@ -22,6 +22,16 @@ impl OllamaClient {
 
     pub async fn triage(&self, pack: &EvidencePack) -> Result<AiTriageResult> {
         let prompt = build_triage_prompt(pack)?;
+        let evidence_ids: Vec<_> = pack
+            .evidence
+            .iter()
+            .map(|record| record.evidence_id.clone())
+            .collect();
+        let evidence_ref_item_schema = if evidence_ids.is_empty() {
+            json!({ "type": "string" })
+        } else {
+            json!({ "type": "string", "enum": evidence_ids })
+        };
 
         let schema = json!({
             "type": "object",
@@ -42,7 +52,7 @@ impl OllamaClient {
                             },
                             "evidence_refs": {
                                 "type": "array",
-                                "items": { "type": "string" }
+                                "items": evidence_ref_item_schema
                             },
                             "why_review_worthy": { "type": "string" },
                             "iot_relevance": { "type": "string" },
