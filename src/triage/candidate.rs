@@ -5,6 +5,8 @@ pub struct AiTriageResult {
     pub schema_version: String,
     pub run_id: String,
     pub model: ModelInfo,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence_audit: Option<EvidenceAuditSummary>,
     pub summary: String,
     pub finding_candidates: Vec<AiFindingCandidate>,
 }
@@ -13,6 +15,24 @@ pub struct AiTriageResult {
 pub struct ModelInfo {
     pub provider: String,
     pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EvidenceAuditSummary {
+    pub repo_name: String,
+    pub commit: Option<String>,
+    pub branch: Option<String>,
+    pub git_tree_state: Option<String>,
+    pub bundle_id: Option<String>,
+    pub generated_at_utc: Option<String>,
+    pub artifact_verification: Option<ArtifactVerificationSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtifactVerificationSummary {
+    pub verified: bool,
+    pub artifact_count: usize,
+    pub digest_file: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -18,6 +18,7 @@ pub enum EvidenceKind {
     AuditEngineFinding,
     BaselineDiff,
     SystemContext,
+    Provenance,
     Vulnerability,
     Component,
 }

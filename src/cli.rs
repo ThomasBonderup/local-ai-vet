@@ -45,4 +45,8 @@ pub enum Command {
         #[arg(short, long)]
         output: PathBuf,
     },
+    VerifyBundle {
+        #[arg(short, long)]
+        bundle_dir: PathBuf,
+    },
 }

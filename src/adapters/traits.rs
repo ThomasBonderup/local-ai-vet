@@ -5,6 +5,7 @@ use std::path::Path;
 pub struct BundleContext {
     pub run_id: String,
     pub repo_name: String,
+    #[allow(dead_code)]
     pub bundle_dir: std::path::PathBuf,
 }
 

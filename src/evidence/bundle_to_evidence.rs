@@ -6,8 +6,11 @@ use std::path::Path;
 use crate::{
     adapters::{default_adapters, traits::BundleContext},
     evidence::{
+        audit::{
+            add_source_digests, artifact_digest_map, provenance_records, repo_from_bundle_metadata,
+            verify_bundle,
+        },
         model::{EvidencePack, EvidenceRecord},
-        raw::RawRepo,
     },
     io::discover::discover_bundle_files,
 };
@@ -20,19 +23,32 @@ pub fn convert_gateway_release_bundle(bundle_dir: &Path) -> Result<EvidencePack>
     };
     let mut records = collect_evidence_records(bundle_dir, &ctx)
         .context("failed to collect evidence records from gateway release bundle")?;
+    let verification = verify_bundle(bundle_dir).context("failed to verify bundle artifacts")?;
+    if let Some(verification) = verification.as_ref() {
+        if !verification.verified {
+            anyhow::bail!("bundle artifact verification failed");
+        }
+    } else {
+        eprintln!(
+            "warning: bundle has no artifact-digests.txt; evidence source integrity is not verified"
+        );
+    }
+    let digests = artifact_digest_map(bundle_dir).context("failed to read artifact digests")?;
+    add_source_digests(&mut records, &digests);
 
     add_related_component_evidence_ids(&mut records);
-    let records = filter_unrelated_components(records);
+    let mut records = filter_unrelated_components(records);
+    let mut provenance = provenance_records(bundle_dir, &ctx, verification.as_ref())
+        .context("failed to build provenance evidence records")?;
+    add_source_digests(&mut provenance, &digests);
+    records.append(&mut provenance);
+    let repo = repo_from_bundle_metadata(bundle_dir, &ctx.repo_name)
+        .context("failed to read bundle repository metadata")?;
 
     Ok(EvidencePack {
         schema_version: "local-ai-vet.evidence-pack.v1".to_string(),
         run_id: ctx.run_id,
-        repo: RawRepo {
-            name: "rust-iot-gateway".to_string(),
-            language: Some("rust".to_string()),
-            commit: None,
-            branch: None,
-        },
+        repo,
         evidence: records,
     })
 }
@@ -172,6 +188,12 @@ mod tests {
         EvidenceConfidence, EvidenceKind, EvidenceRecord, EvidenceSource,
     };
     use serde_json::json;
+    use sha2::{Digest, Sha256};
+    use std::{
+        fs,
+        path::Path,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     fn vulnerability(advisory_id: &str, package: &str, version: &str) -> EvidenceRecord {
         EvidenceRecord {
@@ -218,6 +240,36 @@ mod tests {
             }),
             confidence: EvidenceConfidence::ToolReported,
         }
+    }
+
+    fn temp_bundle() -> std::path::PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after UNIX epoch")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("local-ai-vet-bundle-{unique}"));
+        fs::create_dir_all(&dir).expect("failed to create temp bundle");
+        dir
+    }
+
+    fn write_json(path: &Path, value: serde_json::Value) {
+        fs::write(path, serde_json::to_string_pretty(&value).unwrap())
+            .expect("failed to write JSON fixture");
+    }
+
+    fn digest_file(path: &Path) -> String {
+        let bytes = fs::read(path).expect("failed to read fixture for digest");
+        format!("{:x}", Sha256::digest(bytes))
+    }
+
+    fn write_digest_file(dir: &Path, files: &[&str]) {
+        let body = files
+            .iter()
+            .map(|file| format!("{}  {}", digest_file(&dir.join(file)), file))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(dir.join("artifact-digests.txt"), format!("{body}\n"))
+            .expect("failed to write digest fixture");
     }
 
     #[test]
@@ -301,5 +353,110 @@ mod tests {
                 .get("related_component_evidence_id")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn converts_bundle_with_verified_source_digests_and_provenance() {
+        let dir = temp_bundle();
+        write_json(
+            &dir.join("sbom.cdx.json"),
+            json!({
+                "bomFormat": "CycloneDX",
+                "specVersion": "1.5",
+                "components": [
+                    {
+                        "type": "library",
+                        "bom-ref": "pkg:cargo/rustls-webpki@0.103.10",
+                        "name": "rustls-webpki",
+                        "version": "0.103.10",
+                        "purl": "pkg:cargo/rustls-webpki@0.103.10",
+                        "scope": "required"
+                    }
+                ]
+            }),
+        );
+        write_json(
+            &dir.join("cargo-audit.json"),
+            json!({
+                "vulnerabilities": {
+                    "list": [
+                        {
+                            "package": { "name": "rustls-webpki", "version": "0.103.10" },
+                            "advisory": {
+                                "id": "RUSTSEC-2026-0104",
+                                "title": "Reachable panic in certificate revocation list parsing",
+                                "aliases": ["GHSA-82j2-j2ch-gfr8"],
+                                "url": "https://example.invalid/RUSTSEC-2026-0104",
+                                "date": "2026-04-22",
+                                "description": "CRL panic"
+                            },
+                            "versions": { "patched": [">=0.103.13"] }
+                        }
+                    ]
+                }
+            }),
+        );
+        write_json(
+            &dir.join("manifest.json"),
+            json!({
+                "generated_at_utc": "20260512T130225Z",
+                "bundle_id": "test-bundle",
+                "git_head": "abc123",
+                "git_branch": "main",
+                "git_tree_state": "clean",
+                "package": {
+                    "name": "rust-iot-gateway",
+                    "version": "0.1.0",
+                    "cargo_lock_sha256": "lock-digest"
+                },
+                "audit": {
+                    "command": "cargo audit --json",
+                    "exit_code": 1,
+                    "advisory_db_head": "db-head"
+                }
+            }),
+        );
+        write_json(
+            &dir.join("provenance.json"),
+            json!({
+                "generated_at_utc": "20260512T130225Z",
+                "bundle_id": "test-bundle",
+                "source": {
+                    "repository": "rust-iot-gateway",
+                    "package_name": "rust-iot-gateway",
+                    "package_version": "0.1.0",
+                    "git_head": "abc123",
+                    "git_branch": "main",
+                    "git_tree_state": "clean",
+                    "cargo_lock_sha256": "lock-digest"
+                }
+            }),
+        );
+        write_digest_file(
+            &dir,
+            &[
+                "sbom.cdx.json",
+                "cargo-audit.json",
+                "manifest.json",
+                "provenance.json",
+            ],
+        );
+
+        let pack = convert_gateway_release_bundle(&dir).expect("bundle should convert");
+
+        assert_eq!(pack.repo.commit.as_deref(), Some("abc123"));
+        assert_eq!(pack.repo.branch.as_deref(), Some("main"));
+        assert!(pack.evidence.iter().any(|record| {
+            record.evidence_id == "provenance:artifact-integrity"
+                && record.claim["verified"].as_bool() == Some(true)
+        }));
+        assert!(pack.evidence.iter().any(|record| {
+            record.source.file == "cargo-audit.json" && record.source.sha256.is_some()
+        }));
+        assert!(pack.evidence.iter().any(|record| {
+            record.source.file == "sbom.cdx.json" && record.source.sha256.is_some()
+        }));
+
+        fs::remove_dir_all(&dir).ok();
     }
 }
